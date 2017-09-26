@@ -31,7 +31,8 @@ class Collector:
         # urls = zdaye_all()
         for resp in exe_tasks(request, urls):
             for ip in IP.finditer(resp.text):
-                self.storage({'http': f'http://{ip.group(0)}'})
+                self.storage({'http': f'http://{ip.group(0)}',
+                              'https': f'https://{ip.group(0)}'})
 
     def storage(self, proxy):
         self.db.collector.update_one(
