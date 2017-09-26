@@ -13,9 +13,22 @@ from ipproxy.settings import (
 class Collector:
     def __init__(self):
         self.db = DB
+        self.pages = 5
+        self.source_urls = []
+        self.zdaye_max = hour_delta() + START_ID
+        self.source_list = [
+            # zdaye
+            ('http://ip.zdaye.com/dayProxy/ip/{}.html',
+             self.zdaye_max-self.pages, self.zdaye_max+1),
+            # proxy-list not work ConnectTimeout
+            # ('http://proxy-list.org/english/search.php?ssl=no&p={}',
+            #  1, self.pages+1)
+        ]
+        self.generate_source_urls()
 
     def collect(self):
-        urls = set(chain(PROXY_SITES, zdaye_all()))
+        urls = chain(PROXY_SITES, self.source_urls)
+        # urls = zdaye_all()
         for resp in exe_tasks(request, urls):
             for ip in IP.finditer(resp.text):
                 self.storage({'http': f'http://{ip.group(0)}'})
@@ -31,30 +44,28 @@ class Collector:
             upsert=True
         )
 
-
-def zdaye(count=24):
-    """
-    get ips from zdaye.com
-    :param count: the last 24 pages, daily
-    :return: list of urls
-    """
-    max_id = hour_delta() + START_ID
-    return [
-        f'http://ip.zdaye.com/dayProxy/ip/{page_id}.html'
-        for page_id in range(max_id - count, max_id + 1)
-    ]
+    def generate_source_urls(self):
+        """get pages url whose ip likes 192.168.1.1:8080"""
+        for source in self.source_list:
+            self.source_urls.extend([
+                source[0].format(page_id)
+                for page_id in range(source[1], source[2])
+            ])
 
 
 def zdaye_all():
     """
-    get ips of 2017.1-2017.9
+    get ips of 2017.1-2017.8
     """
     page_urls = set()
     host = 'http://ip.zdaye.com'
-    month_urls = [host+f'/dayProxy/2017/{i}/1.html' for i in range(1, 9)] + \
-                 [host+f'/dayProxy/2017/{i}/2.html' for i in range(1, 9)]
-    month_urls += [host+f'/dayProxy/2017/9/{i}.html' for i in range(1, 13)]
+    month_urls = [
+        host+f'/dayProxy/2017/{i}/{j}.html'
+        for i in range(1, 9)
+        for j in [1, 2]
+    ]
     for resp in exe_tasks(request, month_urls):
         for page_id in ZDAYE_PAGE_ID.finditer(resp.text):
             page_urls.add(host+page_id.group(0))
+    # DB.zdaye.insert_many(map(lambda i: {'url': i}, page_urls))
     return page_urls
