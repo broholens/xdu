@@ -5,7 +5,7 @@ created at 2017-9-25 by broholens
 """
 
 import random
-from ipproxy.settings import (DB, TEST_SITES, HOST, WEBSITES)
+from ipproxy.settings import (DB, TEST_SITES, WEBSITES)
 from ipproxy.utils import request, exe_tasks, logger
 
 
