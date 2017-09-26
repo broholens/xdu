@@ -17,7 +17,9 @@ TEST_SITES = [
     'http://httpbin.org/ip',
     'http://2017.ip138.com/ic.asp',
     'http://www.iprivacytools.com/proxy-checker-anonymity-test/',
-    'http://www.proxylists.net/proxyjudge.php'
+    'http://www.proxylists.net/proxyjudge.php',
+    'http://www.cnproxy.com/ipwhois.php',
+    'http://ip.chinaz.com/getip.aspx'
 ]
 
 # proxies to be collected
@@ -44,4 +46,4 @@ ZDAYE_START_PAGE_ID = 6392
 from pymongo import MongoClient
 DB = MongoClient(MONGO).ipproxy
 
-TIMEOUT = 5
+TIMEOUT = 60
