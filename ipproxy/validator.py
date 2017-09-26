@@ -7,15 +7,12 @@ created at 2017-9-25 by broholens
 from gevent import monkey; monkey.patch_all()
 import re
 import random
-
-import requests
 import gevent
 from pymongo import MongoClient
-
 from ipproxy import settings
+from ipproxy.utils import request
 
 HOST = re.compile('\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
-IP = re.compile('\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}')
 
 
 class Validator:
@@ -23,23 +20,23 @@ class Validator:
     def __init__(self):
         # result of httpbin is different from ip181
         self.db = MongoClient(settings.MONGO).ipproxy
+        self.validator = {
+            'good': ip_validator,
+            'available': website_validator
+        }
 
     def validate(self, proxy_list):
-        tasks = [
-            gevent.spawn(ip_validator, proxy) for proxy in proxy_list
-        ]
-        gevent.joinall(tasks)
-        for task in tasks:
-            if task.value:
-                self.storage(task.value)
+        self._validate(proxy_list)
+        self._validate(proxy_list, 'available')
 
+    def _validate(self, proxy_list, key='good'):
         tasks = [
-            gevent.spawn(website_validator, proxy) for proxy in proxy_list
+            gevent.spawn(self.validator.get(key), proxy) for proxy in proxy_list
         ]
         gevent.joinall(tasks)
         for task in tasks:
             if task.value:
-                self.storage(task.value, 'available')
+                self.storage(task.value, key)
 
     def storage(self, proxy, key='good'):
         self.db.proxies.update_one(
@@ -52,17 +49,6 @@ class Validator:
             },
             upsert=True
         )
-
-
-def request(url, proxy, timeout=5):
-    """
-    catch exception
-    :return: response if ok else None
-    """
-    try:
-        return requests.get(url, proxies=proxy, timeout=timeout)
-    except:
-        return None
 
 
 def ip_validator(proxy):
