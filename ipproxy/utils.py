@@ -4,10 +4,19 @@ created at 2017-9-26 by broholens
 """
 
 from gevent import monkey; monkey.patch_all()
+import logging
 import gevent
 import requests
 import arrow
 from ipproxy.settings import (START, END, TIMEOUT)
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(filename)s %(levelname)s %(message)s'
+)
+
+logger = logging.getLogger(__name__)
 
 
 def request(url, proxy=None, timeout=TIMEOUT):
@@ -16,8 +25,11 @@ def request(url, proxy=None, timeout=TIMEOUT):
     :return: response if ok else None
     """
     try:
-        return requests.get(url, proxies=proxy, timeout=timeout)
+        resp = requests.get(url, proxies=proxy, timeout=timeout)
+        logger.info('fetched %s', url)
+        return resp
     except:
+        logger.error('failed to request %s', url)
         return None
 
 
