@@ -36,8 +36,14 @@ class IPProxy:
         p2.join()
 
 
+# def run_ip_proxy():
+#     while True:
+#         ip = IPProxy()
+#         daily_p = Process(target=ip.collect_validate)
+#         validate_p = Process(target=ip.validate)
+#         daily_p.start()
+#         validate_p.start()
+#         daily_p.join()
+#         validate_p.join()
 if __name__ == '__main__':
-    ip = IPProxy()
-    # ip.collect()
-    # ip.validate()
-    ip.collect_validate()
+    IPProxy.collect_validate()
