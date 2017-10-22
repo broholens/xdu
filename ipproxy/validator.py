@@ -63,7 +63,7 @@ class Validator:
                 {'proxy': proxy},
                 {
                     '$set': {'proxy': proxy},
-                    '$inc': {'detect_times': 1},
+                    '$inc': {'detect_times': 1, 'alive_times': 0},
                 },
                 upsert=True
             )
