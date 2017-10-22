@@ -1,72 +1,152 @@
-"""
-validate whether ip is useful or not
 
-created at 2017-9-25 by broholens
-"""
+from random import choice
+from multiprocessing import Process, JoinableQueue, Queue
 
-import random
-from ipproxy.settings import (DB, TEST_SITES, WEBSITES)
-from ipproxy.utils import request, exe_tasks, logger
+import grequests
+
+from ipproxy.utils import request, logger, cut_queue, exception_handler as eh
+from ipproxy.settings import COLLECTION, TESTSITES, WEBSITES, TIMEOUT
 
 
 class Validator:
 
     def __init__(self):
-        # result of httpbin is different from ip181
-        self.db = DB
         self.logger = logger
-        self.validator = {
-            'good': self.ip_validator,
-            'available': self.website_validator
-        }
+        # self.proxies = []
+        self.count_website_ok = 0
+        self.count_testsite_ok = 0
+        self.proxy_validated_q = JoinableQueue()
+        self.proxy_source_q = Queue()
+        self.my_ip = self.get_my_ip()
 
-    def validate(self, proxy_list, key='good'):
-        for proxy in exe_tasks(self.validator.get(key), proxy_list):
-            self.storage(proxy, key)
+    def get_my_ip(self):
+        resp = request('http://httpbin.org/ip')
+        if not resp:
+            raise ValueError('cannot get my ip!')
+        self.logger.info('my ip: %s', resp.json().get('origin'))
+        return resp.json().get('origin')
 
-    def storage(self, proxy, key='good'):
-        self.db.validator.update_one(
-            {'proxy': proxy},
-            {
-                '$set': {'proxy': proxy},
-                '$addToSet': {'type': key},
-                '$inc': {key+'_times': 1, 'detect_times': 1},
-                '$currentDate': {'lastModified': True}
-            },
-            upsert=True
+    def get_db_proxies(self):
+        for proxy in COLLECTION.find():
+            self.proxy_source_q.put(proxy.get('proxy'))
+        # return [proxy for proxy in COLLECTION.find().skip(900).limit(200)]
+
+    def get_proxies(self, proxies_seq):
+        for proxy in proxies_seq:
+            self.proxy_source_q.put(proxy)
+        # pass
+
+    def website_validate(self, q, concurrent_num=50):
+        while not q.empty():
+            self.logger.info('qsize: %s', q.qsize())
+            proxies = cut_queue(q, concurrent_num)
+            self._web_validator(proxies)
+        self.proxy_validated_q.join()
+        # while self.proxies:
+        #     self.logger.info('still: %s', len(self.proxies))
+        #     proxies = cut_list(self.proxies, concurrent_num)
+        #     self._web_validator(proxies)
+        # self.proxy_validated_q.join()
+
+    def _web_validator(self, proxies):
+        rs = (request(choice(WEBSITES), proxy=proxy, is_map=True)
+              for proxy in proxies)
+        # rs = []
+        # for proxy in proxies:
+        #     protocol = 'http' if proxy.get('http') else 'https'
+        #     rs.append(request(url=random.choice(WEBSITES.get(protocol)),
+        #                       proxy=proxy,
+        #                       is_map=True))
+        resps = grequests.map(rs, gtimeout=TIMEOUT, exception_handler=eh)
+        for resp, proxy in zip(resps, proxies):
+            COLLECTION.update_one(
+                {'proxy': proxy},
+                {
+                    '$set': {'proxy': proxy},
+                    '$inc': {'detect_times': 1},
+                },
+                upsert=True
+            )
+            if not resp or resp.status_code != 200:
+                continue
+
+            self.proxy_validated_q.put(proxy)
+            self.count_website_ok += 1
+            self.logger.info('websites available: %s %s %s',
+                             self.count_website_ok,
+                             proxy,
+                             resp.url)
+
+            COLLECTION.update_one(
+                {'proxy': proxy},
+                {
+                    '$set': {'proxy': proxy},
+                    '$push': {'detected_by': resp.url},
+                    '$addToSet': {'type': 'normal'},
+                    '$inc': {'alive_times': 1},
+                    '$currentDate': {'lastModified': True}
+                },
+                upsert=True
+            )
+
+    def test_validate(self):
+        while True:
+            self._test_validator(self.proxy_validated_q.get())
+            self.proxy_validated_q.task_done()
+
+    def _test_validator(self, proxy):
+        http, https = {'http': proxy.get('http')}, {'https': proxy.get('https')}
+        # protocol = 'http' if proxy.get('http') else 'https'
+        reqs = (
+            request(choice(TESTSITES.get('http')), proxy=http, is_map=True),
+            request(choice(TESTSITES.get('https')), proxy=https, is_map=True)
         )
+        resps = grequests.map(reqs, gtimeout=10, exception_handler=eh)
+        for index, resp in enumerate(resps):
+            if not resp or self.my_ip in resp.text:
+                continue
 
-    def ip_validator(self, proxy):
-        """
-        validate ip usable by some websites that return ip
-        :param proxy: something like {'http': 'http://162.243.107.120:3128'}
-        :return: proxy if usable else None
-        """
-        if proxy is None:
-            return None
-        url = random.choice(TEST_SITES)
-        resp = request(url, proxy)
-        if not resp:
-            return None
-        self.logger.info('ip validator: available proxy - %s', proxy)
-        return proxy
-        # distinguish anonymous level
-        # matches = HOST.findall(resp.text)
-        # if proxy.get('http').split(':')[1][2:] in matches:
-        #     self.logger.info('ip validator: %s', proxy)
-        #     return proxy
-        # self.logger.error('? %s', resp.text)
-        # self.logger.error('ip validator: useless ip %s', proxy)
+            self.count_testsite_ok += 1
 
-    def website_validator(self, proxy):
-        """
-        likes ip_validator except uses website like baidu
-        """
-        url = random.choice(WEBSITES)
-        resp = request(url, proxy)
-        if not resp:
-            return None
-        if resp.status_code == 200:
-            self.logger.info('website validator: available proxy - %s', proxy)
-            return proxy
-        self.logger.error('website validator: useless proxy %s', proxy)
+            self.logger.info('high anonymity: %s %s %s',
+                             self.count_testsite_ok,
+                             https if index > 0 else http,
+                             resp.url)
+
+            COLLECTION.update_one(
+                {'proxy': proxy},
+                {
+                    '$set': {'proxy': proxy},
+                    '$push': {'detected_by': resp.url},
+                    '$addToSet': {
+                        'type': 'high',
+                        'protocol': 'https' if index > 0 else 'http'
+                    },
+                    '$inc': {
+                        'alive_times': 1,
+                        'detect_times': 1
+                    },
+                    '$currentDate': {'lastModified': True}
+                },
+                upsert=True
+            )
+
+    def validate(self, db_proxies=True, proxies_seq=None):
+        if db_proxies is True:
+            # self.proxies = self.get_db_proxies()
+            self.get_db_proxies()
+        elif proxies_seq:
+            # self.proxies = proxies_seq
+            self.get_proxies(proxies_seq)
+        else:
+            self.logger.error('source of proxies is empty!')
+            raise ValueError('source of proxies is empty!')
+        p1 = Process(target=self.website_validate, args=(self.proxy_source_q,))
+        p2 = Process(target=self.test_validate)
+        p2.daemon = True
+        p1.start()
+        p2.start()
+        p1.join()
+        # self.logger.info('high: %s, normal: %s',
+        #                  self.count_testsite_ok,
+        #                  self.count_website_ok)
