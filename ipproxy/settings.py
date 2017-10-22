@@ -107,6 +107,8 @@ PROXY_SITES = [
     'https://www.rmccurdy.com/scripts/proxy/good.txt',
     'http://www.proxylists.net/http_highanon.txt',
     'http://ab57.ru/downloads/proxyold.txt',
+    'http://www.66ip.cn/mo.php?tqsl=500',
+    'http://www.89ip.cn/apijk/?&tqsl=500',
     'http://www.66ip.cn/nmtq.php?getnum=500&anonymoustype=4&proxytype=2&api=66ip'
 ]
 
@@ -114,23 +116,32 @@ PROXY_SITES = [
 MONGO = 'mongodb://localhost:27017'
 
 
-from datetime import datetime
-START = datetime(2017, 9, 26, 9)
-END = datetime.now()
+from datetime import datetime, date
+# for zdaye
+ZDY_START = datetime(2017, 9, 19, 20)
+ZDY_END = datetime.now()
+# for mayi
+MAYI_START = date(2015, 4, 27)
+MAYI_END = date.today()
 
 import re
-HOST = re.compile('\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
-PORT = re.compile('\d{1,5}')
-IP = re.compile('\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}')
-ZDAYE_PAGE_ID = re.compile('/dayProxy/ip/\d+.html')
-ZDAYE_START_PAGE_ID = 6392
+RE_HOST = re.compile('\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
+RE_PORT = re.compile('\d{1,5}')
+RE_IP = re.compile('\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}')
+RE_IP_2 = re.compile('\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}</td>\s+<td>\d{1,5}')
+DATA5U = re.compile('http://www.data5u.com/dayip/\d+.html')
+ZDAYE_START_PAGE_ID = 6235
+
 
 from pymongo import MongoClient
 COLLECTION = MongoClient(MONGO).ip.ipproxy
 
 from multiprocessing import Queue
+# queue for collect_validate()
 Q = Queue()
 
+# request timeout
 TIMEOUT = 5
 
+# count of pages to crawl
 PAGES = 2
