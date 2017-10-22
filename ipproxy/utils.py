@@ -8,7 +8,9 @@ import grequests
 import arrow
 from lxml import etree
 from fake_useragent import UserAgent
-from ipproxy.settings import (START, END, TIMEOUT, HOST, PORT)
+from ipproxy.settings import (
+    ZDY_START, ZDY_END, TIMEOUT, RE_HOST, RE_PORT, MAYI_START, MAYI_END
+)
 
 
 logging.basicConfig(
@@ -65,8 +67,8 @@ class Parser:
         self.tree = self.to_tree()
 
     def validate_ip(self, host, port):
-        return (HOST.findall(host) and HOST.findall(host)[0],
-                PORT.findall(port) and PORT.findall(port)[0])
+        return (RE_HOST.findall(host) and RE_HOST.findall(host)[0],
+                RE_PORT.findall(port) and RE_PORT.findall(port)[0])
 
     def to_tree(self):
         return etree.HTML(self.response.text)
@@ -103,7 +105,7 @@ def exception_handler(request, exception):
     pass
 
 
-def hour_delta(start=START, end=END, tz='local'):
+def hour_delta(start=ZDY_START, end=ZDY_END, tz='local'):
     """
     calculate hours from end to start
     :param start: datetime
@@ -115,6 +117,9 @@ def hour_delta(start=START, end=END, tz='local'):
     now = arrow.get(end, tz)
     return (now - start).days * 24 + now.hour - start.hour
 
+
+def day_delta(start=MAYI_START, end=MAYI_END):
+    return (end - start).days - 18
 
 # def exe_tasks(func, task_list):
 #     """gevent exe"""
