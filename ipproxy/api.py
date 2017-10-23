@@ -1,5 +1,6 @@
 from wsgiref.simple_server import make_server
 import json
+import pymongo
 from ipproxy.settings import COLLECTION
 import web
 
@@ -20,7 +21,9 @@ import web
 
 urls = (
     '/', 'index',
-    '/get', 'get'
+    '/get', 'get',
+    '/increase_detect_times', 'detect',
+    '/increase_alive_times', 'alive'
 )
 app = web.application(urls, globals())
 
@@ -35,28 +38,33 @@ class get:
         count, protocol = web.input(), web.input()
         results = [i.get('proxy') for i in COLLECTION.find(
                         {
-                            'alive_times': {'$gt': 5},
-                            'type': {'$in': ['high']},
+                            'score': {'$gt': 0.8},
                             'protocol': {
                                 '$in': [protocol.get('protocol', 'http')]
                             }
                          },
                         {'proxy': 1, '_id': 0}
-                    ).limit(int(count.get('count', 50)))]
+                    ).sort('alive_times', pymongo.DESCENDING)]
+        #  ).limit(int(count.get('count', 50)))]
         return json.dumps(results)
+
+
+class detect:
+    def POST(self):
+        COLLECTION.update_one(
+            {'proxy': json.loads(web.data())},
+            {'$inc': {'detect_times': 1}}
+        )
+
+
+class alive:
+    def POST(self):
+        COLLECTION.update_one(
+            {'proxy': json.loads(web.data())},
+            {'$inc': {'alive_times': 1, 'detect_times': 1}}
+        )
 
 
 if __name__ == "__main__":
     app.run()
 
-
-# for i in COLLECTION.find({'detect_times': {'$gt': 5}}):
-#     if not i.get('alive_times'):
-#         s = COLLECTION.find_one_and_delete({'_id': i.get('_id')})
-#         print(s.get('proxy'))
-#
-# for i in COLLECTION.find(
-#                 {'alive_times': {'$gt': 5}, 'type': {'$in': ['high']}},
-#                 {'proxy': 1, '_id': 0}
-#             ).limit(50):
-#     print(i)
