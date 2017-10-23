@@ -1,4 +1,4 @@
-
+from datetime import datetime
 from random import choice
 from multiprocessing import Process, JoinableQueue, Queue
 
@@ -12,7 +12,6 @@ class Validator:
 
     def __init__(self):
         self.logger = logger
-        # self.proxies = []
         self.count_website_ok = 0
         self.count_testsite_ok = 0
         self.proxy_validated_q = JoinableQueue()
@@ -29,7 +28,6 @@ class Validator:
     def get_db_proxies(self):
         for proxy in COLLECTION.find():
             self.proxy_source_q.put(proxy.get('proxy'))
-        # return [proxy for proxy in COLLECTION.find().skip(900).limit(200)]
 
     def get_proxies(self, proxies_seq):
         for proxy in proxies_seq:
@@ -51,19 +49,14 @@ class Validator:
     def _web_validator(self, proxies):
         rs = (request(choice(WEBSITES), proxy=proxy, is_map=True)
               for proxy in proxies)
-        # rs = []
-        # for proxy in proxies:
-        #     protocol = 'http' if proxy.get('http') else 'https'
-        #     rs.append(request(url=random.choice(WEBSITES.get(protocol)),
-        #                       proxy=proxy,
-        #                       is_map=True))
+
         resps = grequests.map(rs, gtimeout=TIMEOUT, exception_handler=eh)
         for resp, proxy in zip(resps, proxies):
             COLLECTION.update_one(
                 {'proxy': proxy},
                 {
                     '$set': {'proxy': proxy},
-                    '$inc': {'detect_times': 1, 'alive_times': 0},
+                    '$inc': {'detect_times': 1},
                 },
                 upsert=True
             )
@@ -80,13 +73,13 @@ class Validator:
             COLLECTION.update_one(
                 {'proxy': proxy},
                 {
-                    '$set': {'proxy': proxy},
-                    '$push': {'detected_by': resp.url},
+                    '$push': {
+                        'detected_by': resp.url,
+                        'alive_time_base': datetime.now()
+                    },
                     '$addToSet': {'type': 'normal'},
-                    '$inc': {'alive_times': 1},
-                    '$currentDate': {'lastModified': True}
-                },
-                upsert=True
+                    '$inc': {'alive_times': 1}
+                }
             )
 
     def test_validate(self):
@@ -96,7 +89,6 @@ class Validator:
 
     def _test_validator(self, proxy):
         http, https = {'http': proxy.get('http')}, {'https': proxy.get('https')}
-        # protocol = 'http' if proxy.get('http') else 'https'
         reqs = (
             request(choice(TESTSITES.get('http')), proxy=http, is_map=True),
             request(choice(TESTSITES.get('https')), proxy=https, is_map=True)
@@ -113,11 +105,20 @@ class Validator:
                              https if index > 0 else http,
                              resp.url)
 
+            cursor = COLLECTION.find_one({'proxy': proxy})
+            this_id = cursor.get('_id')
+            alive_times = cursor.get('alive_times') + 1
+            detect_times = cursor.get('detect_times') + 1
+            # [0, 1]
+            score = alive_times * 2 / (alive_times + detect_times)
             COLLECTION.update_one(
-                {'proxy': proxy},
+                {'_id': this_id},
                 {
-                    '$set': {'proxy': proxy},
-                    '$push': {'detected_by': resp.url},
+                    '$set': {'score': score},
+                    '$push': {
+                        'detected_by': resp.url,
+                        'alive_time_base': datetime.now()
+                    },
                     '$addToSet': {
                         'type': 'high',
                         'protocol': 'https' if index > 0 else 'http'
@@ -125,10 +126,8 @@ class Validator:
                     '$inc': {
                         'alive_times': 1,
                         'detect_times': 1
-                    },
-                    '$currentDate': {'lastModified': True}
-                },
-                upsert=True
+                    }
+                }
             )
 
     def validate(self, db_proxies=True, proxies_seq=None):
