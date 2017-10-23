@@ -5,7 +5,7 @@ from multiprocessing import Process, JoinableQueue, Queue
 import grequests
 
 from ipproxy.utils import request, logger, cut_queue, exception_handler as eh
-from ipproxy.settings import COLLECTION, TESTSITES, WEBSITES, TIMEOUT
+from ipproxy.settings import COLLECTION, TESTSITES, WEBSITES, TIMEOUT, RE_HOST
 
 
 class Validator:
@@ -88,6 +88,11 @@ class Validator:
             self.proxy_validated_q.task_done()
 
     def _test_validator(self, proxy):
+        COLLECTION.update_one(
+            {'proxy': proxy},
+            {'$inc': {'detect_times': 1}}
+        )
+        detect_times_label = 0
         http, https = {'http': proxy.get('http')}, {'https': proxy.get('https')}
         reqs = (
             request(choice(TESTSITES.get('http')), proxy=http, is_map=True),
@@ -95,8 +100,27 @@ class Validator:
         )
         resps = grequests.map(reqs, gtimeout=10, exception_handler=eh)
         for index, resp in enumerate(resps):
-            if not resp or self.my_ip in resp.text:
+            if not resp:
                 continue
+
+            matches = RE_HOST.findall(resp.text)
+            if not matches or self.my_ip in matches:
+                continue
+
+            u = https if index > 0 else http
+            r = request(u, timeout=3)
+            if r:
+                continue
+
+            self.logger.info('%s, %s', matches, proxy)
+
+            detect_times_label += 1
+
+            if detect_times_label == 2:
+                COLLECTION.update_one(
+                    {'proxy': proxy},
+                    {'$inc': {'detect_times': 1}}
+                )
 
             self.count_testsite_ok += 1
 
@@ -123,10 +147,7 @@ class Validator:
                         'type': 'high',
                         'protocol': 'https' if index > 0 else 'http'
                     },
-                    '$inc': {
-                        'alive_times': 1,
-                        'detect_times': 1
-                    }
+                    '$inc': {'alive_times': 1}
                 }
             )
 
