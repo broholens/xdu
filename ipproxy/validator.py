@@ -1,11 +1,15 @@
+import time
 from datetime import datetime
 from random import choice
 from multiprocessing import Process, JoinableQueue, Queue
 
 import grequests
+from bson.objectid import ObjectId
 
 from ipproxy.utils import request, logger, cut_queue, exception_handler as eh
-from ipproxy.settings import COLLECTION, TESTSITES, WEBSITES, TIMEOUT, RE_HOST
+from ipproxy.settings import (
+    COLLECTION, TESTSITES, WEBSITES, TIMEOUT, RE_HOST, HIGH_ANONYMOUS
+)
 
 
 class Validator:
@@ -15,6 +19,7 @@ class Validator:
         self.count_website_ok = 0
         self.count_testsite_ok = 0
         self.proxy_validated_q = JoinableQueue()
+        self.real_time_q = Queue()
         self.proxy_source_q = Queue()
         self.my_ip = self.get_my_ip()
 
@@ -26,25 +31,32 @@ class Validator:
         return resp.json().get('origin')
 
     def get_db_proxies(self):
-        for proxy in COLLECTION.find():
+        for proxy in COLLECTION.find().limit(1000):
             self.proxy_source_q.put(proxy.get('proxy'))
+
+    # def get_db_proxies(self):
+    #     for proxy in COLLECTION.find():
+    #         http = {'http': proxy.get('http')}
+    #         https = {'https': proxy.get('https')}
+    #         self.proxy_source_q.put(
+    #             request(choice(TESTSITES.get('http')), proxy=http, is_map=True)
+    #         )
+    #         self.proxy_source_q.put(
+    #             request(choice(TESTSITES.get('https')), proxy=https, is_map=True)
+    #         )
 
     def get_proxies(self, proxies_seq):
         for proxy in proxies_seq:
             self.proxy_source_q.put(proxy)
         # pass
 
+    # availability of ip is too low, use ipsite you must *2, so filter them
     def website_validate(self, q, concurrent_num=50):
         while not q.empty():
-            self.logger.info('qsize: %s', q.qsize())
+            self.logger.info('source qsize: %s', q.qsize())
             proxies = cut_queue(q, concurrent_num)
             self._web_validator(proxies)
         self.proxy_validated_q.join()
-        # while self.proxies:
-        #     self.logger.info('still: %s', len(self.proxies))
-        #     proxies = cut_list(self.proxies, concurrent_num)
-        #     self._web_validator(proxies)
-        # self.proxy_validated_q.join()
 
     def _web_validator(self, proxies):
         rs = (request(choice(WEBSITES), proxy=proxy, is_map=True)
@@ -64,6 +76,7 @@ class Validator:
                 continue
 
             self.proxy_validated_q.put(proxy)
+
             self.count_website_ok += 1
             self.logger.info('websites available: %s %s %s',
                              self.count_website_ok,
@@ -73,10 +86,6 @@ class Validator:
             COLLECTION.update_one(
                 {'proxy': proxy},
                 {
-                    '$push': {
-                        'detected_by': resp.url,
-                        'alive_time_base': datetime.now()
-                    },
                     '$addToSet': {'type': 'normal'},
                     '$inc': {'alive_times': 1}
                 }
@@ -107,10 +116,12 @@ class Validator:
             if not matches or self.my_ip in matches:
                 continue
 
-            u = https if index > 0 else http
-            r = request(u, timeout=3)
+            p = (https, 'https') if index > 0 else (http, 'http')
+            r = request(p[0], timeout=10)
             if r:
                 continue
+
+            self.real_time_q.put(p)
 
             self.logger.info('%s, %s', matches, proxy)
 
@@ -124,39 +135,59 @@ class Validator:
 
             self.count_testsite_ok += 1
 
-            self.logger.info('high anonymity: %s %s %s',
-                             self.count_testsite_ok,
-                             https if index > 0 else http,
-                             resp.url)
-
             cursor = COLLECTION.find_one({'proxy': proxy})
             this_id = cursor.get('_id')
             alive_times = cursor.get('alive_times') + 1
-            detect_times = cursor.get('detect_times') + 1
+            detect_times = cursor.get('detect_times')
             # [0, 1]
             score = alive_times * 2 / (alive_times + detect_times)
+            self.logger.info('high anonymity: %s score: %s %s %s',
+                             self.count_testsite_ok,
+                             score,
+                             p[0],
+                             resp.url)
             COLLECTION.update_one(
-                {'_id': this_id},
+                {'_id': ObjectId(this_id)},
                 {
                     '$set': {'score': score},
-                    '$push': {
-                        'detected_by': resp.url,
-                        'alive_time_base': datetime.now()
-                    },
+                    '$push': {'alive_time_base': datetime.now()},
                     '$addToSet': {
                         'type': 'high',
-                        'protocol': 'https' if index > 0 else 'http'
+                        'protocol': p[1]
                     },
                     '$inc': {'alive_times': 1}
                 }
             )
 
+    def real_time(self):
+        while True:
+            proxy, protocol = self.real_time_q.get()
+
+            # if not proxy:
+            #     time.sleep(60*2)
+            self.logger.info('real time testing: %s', proxy)
+            resp = request(choice(WEBSITES), proxy=proxy, timeout=5)
+
+            if not resp:
+                self.logger.info('dead: %s', proxy)
+                continue
+
+            self.logger.info('still alive: %s', proxy)
+            self.real_time_q.put(proxy)
+            HIGH_ANONYMOUS.update_one(
+                {'proxy': proxy},
+                {
+                    '$set': {'proxy': proxy, 'protocol': protocol},
+                    '$inc': {'alive_times'},
+                    '$push': {'alive_time_base': datetime.now()}
+                },
+                upsert=True
+            )
+
     def validate(self, db_proxies=True, proxies_seq=None):
         if db_proxies is True:
-            # self.proxies = self.get_db_proxies()
             self.get_db_proxies()
         elif proxies_seq:
-            # self.proxies = proxies_seq
             self.get_proxies(proxies_seq)
         else:
             self.logger.error('source of proxies is empty!')
