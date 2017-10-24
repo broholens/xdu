@@ -4,12 +4,12 @@ created at 2017-9-26 by broholens
 """
 
 import logging
+import random
 import grequests
 import arrow
 from lxml import etree
-from fake_useragent import UserAgent
 from ipproxy.settings import (
-    ZDY_START, ZDY_END, TIMEOUT, RE_HOST, RE_PORT, MAYI_START, MAYI_END
+    UA, ZDY_START, ZDY_END, TIMEOUT, RE_HOST, RE_PORT, MAYI_START, MAYI_END
 )
 
 
@@ -26,7 +26,7 @@ def request(url, proxy=None, timeout=TIMEOUT, is_map=False, retry=False):
     catch exception
     :return: response if ok else None
     """
-    header = {'User-Agent': UserAgent().random}
+    header = {'User-Agent': random.choice(UA)}
     # try:
     req = grequests.get(url, proxies=proxy, headers=header, timeout=timeout)
     logger.info('fetching %s %s', url, proxy)
@@ -119,7 +119,7 @@ def hour_delta(start=ZDY_START, end=ZDY_END, tz='local'):
 
 
 def day_delta(start=MAYI_START, end=MAYI_END):
-    return (end - start).days - 18
+    return (end - start).days
 
 # def exe_tasks(func, task_list):
 #     """gevent exe"""
