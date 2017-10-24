@@ -35,10 +35,12 @@ class index:
 
 class get:
     def GET(self):
+        # TODO: count return different proxies
         count, protocol = web.input(), web.input()
         results = [i.get('proxy') for i in COLLECTION.find(
                         {
-                            'score': {'$gt': 0.8},
+                            # 'score': {'$gt': 0.8},
+                            'type': {'$in': ['high']},
                             'protocol': {
                                 '$in': [protocol.get('protocol', 'http')]
                             }
