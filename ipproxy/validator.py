@@ -31,9 +31,8 @@ class Validator:
         return resp.json().get('origin')
 
     def clear_up_db_proxies(self):
-        # COLLECTION.delete_many({'alive_times': None, 'detect_times': {'$gt': 0}})
         COLLECTION.delete_many({'type': ['normal']})
-        COLLECTION.delete_many({'alive_times': 0})
+        COLLECTION.delete_many({'alive_times': None})
         COLLECTION.delete_many({'score': {'$lt': 0.5}})
 
     def get_db_proxies(self):
