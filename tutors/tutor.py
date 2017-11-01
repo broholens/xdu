@@ -21,12 +21,15 @@ class Tutor:
             self.homepage_q.put(self.base_url+f'/searchbychar.php?char={i}')
 
     def get_tutors(self):
-        self.col.create_index([('speciality_text', TEXT)])
+        # https://docs.mongodb.com/manual/tutorial/text-search-with-rlp/
+        # self.col.create_index([('speciality_text', TEXT)],
+        #                       default_language='simplified chinese')
         self.homepage_q = Queue()
         self._put_to_homepage_q()
         self.speciality_q = JoinableQueue()
         p1 = Process(target=self._get_homepage)
         p2 = Process(target=self._get_speciality)
+        p2.daemon = True
         p1.start()
         p2.start()
         p1.join()
@@ -57,10 +60,10 @@ class Tutor:
                 self.logger.info('find teacher %s', teacher_name)
                 self.speciality_q.put(self.base_url+teacher_url)
                 self.col.update_one(
-                    {'homepage_url': teacher_url},
+                    {'homepage_url': self.base_url+teacher_url},
                     {
                         '$set': {
-                            'homepage_url': teacher_url,
+                            'homepage_url': self.base_url+teacher_url,
                             'tutor_name': teacher_name
                         }
                     },
@@ -76,7 +79,7 @@ class Tutor:
 
         specialities = ''.join(specialities)
         self.col.update_one(
-            {'homepage_url': response.url},
+            {'homepage_url': response.url.rstrip('/')},
             {
                 '$set': {'speciality_text': specialities}
             },
@@ -102,37 +105,45 @@ class Tutor:
             return
 
         if label == 'homepage':
-            results = utils.xpath_extract(tree, '//ul[@id="left_ul"]/li')
-        else:
-            results = utils.xpath_extract(tree, '//div[@id="n1"]//text()') +\
-                      utils.xpath_extract(tree, '//div[@id="n2"]//text()')
+            return utils.xpath_extract(tree, '//ul[@id="left_ul"]/li')
 
-        if not results:
-            self.logger.error('cannot parse %s', response.url)
-            q.put(response.url)
+        return utils.xpath_extract(tree, '//div[@class="nr"]//text()')
+        # utils.xpath_extract(tree, '//div[@id="n2"]//text()')
 
-        return results
+        # if not results:
+        #     self.logger.error('cannot parse %s', response.url)
+        #     q.put(response.url)
+
+        # return results
 
     def search(self, speciality):
         print('searching......')
-        tutors = self.col.find(
-            {'$text': {'$search': speciality}},
-            {'speciality_text': 0}
-        )
-        num_tutors = tutors.count()
-        if num_tutors == 0:
-            print(f'not find tutors research {speciality}')
-            return
-        print(f'find {num_tutors} tutors research {speciality}')
-        for tutor in tutors:
-            print(tutor['tutor_name'], tutor['homepage_url'])
+        # tutors = self.col.find(
+        #     {'$text': {'$search': speciality, '$language': 'hans'}},
+        #     {'speciality_text': 0}
+        # )
+        # num_tutors = tutors.count()
+        # if num_tutors == 0:
+        #     print(f'not find tutors research {speciality}')
+        #     return
+        # print(f'find {num_tutors} tutors research {speciality}')
+        tutor_num = 0
+        for tutor in self.col.find():
+            if speciality not in tutor.get('speciality_text', ''):
+                continue
+            tutor_num += 1
+            print(tutor_num, tutor['tutor_name'], tutor['homepage_url'])
+            # TODO: how to use this
             self.col.update_one(
                 {'_id': ObjectId(tutor['_id'])},
                 {'$setOnInsert': {'specialities': speciality}},
                 upsert=True
             )
+        if tutor_num == 0:
+            print(f'not find tutor research {speciality}')
 
 
 if __name__ == '__main__':
     tutors = Tutor()
-    tutors.get_tutors()
+    # tutors.get_tutors()
+    tutors.search('深度')
