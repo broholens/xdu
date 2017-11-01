@@ -39,9 +39,9 @@ class Collector:
         urls = list()
 
         # for api
-        # urls.extend(
-        #     [(api, self.parse_regex) for api in PROXY_SITES]
-        # )
+        urls.extend(
+            [(api, self.parse_regex) for api in PROXY_SITES]
+        )
 
         # for data5u
         # urls.extend(
