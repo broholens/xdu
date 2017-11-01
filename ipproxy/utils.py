@@ -121,6 +121,22 @@ def hour_delta(start=ZDY_START, end=ZDY_END, tz='local'):
 def day_delta(start=MAYI_START, end=MAYI_END):
     return (end - start).days
 
+
+def to_tree(text):
+    try:
+        return etree.HTML(text)
+    except:
+        return
+
+
+def xpath_extract(tree, xpath, first=False):
+    results = tree.xpath(xpath)
+    if not results:
+        return []
+    if first is True:
+        return results[0]
+    return results
+
 # def exe_tasks(func, task_list):
 #     """gevent exe"""
 #     tasks = [gevent.spawn(func, task) for task in task_list]

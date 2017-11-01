@@ -66,7 +66,7 @@ TESTSITES = {
         'http://httpbin.org/ip',
         'http://whatismyip.org/',
         'http://2017.ip138.com/ic.asp',
-        'http://www.iprivacytools.com/proxy-checker-anonymity-test/',
+        # 'http://www.iprivacytools.com/proxy-checker-anonymity-test/',
         'http://www.proxylists.net/proxyjudge.php',
         # 'http://www.cnproxy.com/ipwhois.php',
         'http://ip.chinaz.com/getip.aspx',
@@ -79,13 +79,13 @@ TESTSITES = {
         'http://ipchicken.com/',
         'http://www.ipaddressapi.com/',
         'http://checkip.dyndns.com/',
-        'http://www.btcha.com/ip.html',
+        # 'http://www.btcha.com/ip.html',
         'http://hidingipaddress.com/'
     ],
     'https': [
         'https://httpbin.org/ip',
-        'https://www.whatismyip.com/',
-        'https://whatismyipaddress.com/',
+        # 'https://www.whatismyip.com/',
+        # 'https://whatismyipaddress.com/',
         'https://www.ip-address.org/',
         'https://www.iplocation.net/',
         'https://www.ip2location.com/',
@@ -96,9 +96,8 @@ TESTSITES = {
         'https://ipaddress.pro/',
         'https://www.whoisthisip.com/',
         'https://www.find-ip.net/',
-        'https://ipinfo.io/',
-        'https://ipfind.co/',
-        'https://www.find-ip.net/'
+        # 'https://ipinfo.io/',
+        'https://ipfind.co/'
     ]
 }
 
@@ -110,6 +109,8 @@ PROXY_SITES = [
     'http://www.66ip.cn/mo.php?tqsl=500',
     # 'http://www.89ip.cn/apijk/?&tqsl=500',
     'http://www.httpdaili.com/mfdl/',
+    'http://daili.iphai.com/',
+    'http://ip.baizhongsou.com/',
     'http://www.66ip.cn/nmtq.php?getnum=500&anonymoustype=4&proxytype=2&api=66ip'
 ]
 

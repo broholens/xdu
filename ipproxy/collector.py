@@ -18,6 +18,7 @@ class Collector:
     def __init__(self):
         self.logger = logger
         self.q = queue.Queue()
+        self.proxy_q = queue.Queue()
         self.put_to_queue()
 
     def storage(self, ips):
@@ -26,6 +27,7 @@ class Collector:
         for ip in ips:
             proxy = {'http': f'http://{ip}', 'https': f'https://{ip}'}
             Q.put(proxy)
+            # self.proxy_q.put(proxy)
             COLLECTION.update_one(
                 {'proxy': proxy},
                 {'$set': {'proxy': proxy}},
@@ -63,20 +65,20 @@ class Collector:
         #      for i in range(now, 1, -1)]
         # )
 
-        # for kuaidaili
-        urls.extend(
-            [(f'http://www.kuaidaili.com/free/inha/{i}', self.parse_regex)
-             for i in range(1, sum((1, 1000)))]  # +
-            # [(f'http://www.kuaidaili.com/free/intr/{i}', self.parse_kuai)
-            #  for i in range(1, sum((1, PAGES)))]
-        )
+        # for kuaidaili todo: 1001-1890
+        # urls.extend(
+        #     [(f'http://www.kuaidaili.com/free/inha/{i}', self.parse_regex)
+        #      for i in range(1, sum((1, 1000)))]  # +
+        #     # [(f'http://www.kuaidaili.com/free/intr/{i}', self.parse_kuai)
+        #     #  for i in range(1, sum((1, PAGES)))]
+        # )
 
-        # for zdaye
-        now = hour_delta() + ZDAYE_START_PAGE_ID
-        urls.extend(
-            [(f'http://ip.zdaye.com/dayProxy/ip/{i}.html', self.parse_regex)
-             for i in range(now, now - 795, -1)]
-        )
+        # for zdaye+
+        # now = hour_delta() + ZDAYE_START_PAGE_ID
+        # urls.extend(
+        #     [(f'http://ip.zdaye.com/dayProxy/ip/{i}.html', self.parse_regex)
+        #      for i in range(now, now - 795, -1)]
+        # )
 
         # for ip181+
         # urls.extend(
@@ -99,25 +101,22 @@ class Collector:
         # )
 
         # for xiaoshu+
-        # now = day_delta(XS_START, XS_END) * 2 + 27
-        # urls.extend(
-        #     [(f'http://www.xsdaili.com/dayProxy/ip/{i}.html', self.parse_regex)
-        #      for i in range(now, 1, -1)]  # not contains 1
-        # )
+        now = day_delta(XS_START, XS_END) * 2 + 27
+        urls.extend(
+            [(f'http://www.xsdaili.com/dayProxy/ip/{i}.html', self.parse_regex)
+             for i in range(now, 1, -1)]  # not contains 1
+        )
 
         # for goubanjia
+        # TODO: 504
         # 'http://www.goubanjia.com/free/'
 
-        # for iphai
-        # 'http://daili.iphai.com/
-
         # for xiaoma
+        # TODO: new regex
         # 'http://yun-daili.com/free.asp'
 
-        # for unknown
-        # 'http://ip.baizhongsou.com/'
-
         # for pachong
+        # TODO: not update
         # 'http://www.pcdaili.com/index.php'
 
         random.shuffle(urls)
@@ -134,7 +133,12 @@ class Collector:
         self.storage(ips)
 
     def parse_data5u(self, response):
-        for url in DATA5U.findall(response.text):
+        matches = DATA5U.findall(response.text)
+        if not matches:
+            self.logger.error('%s matches nothing', response.url)
+            self.q.put((response.url, self.parse_data5u))
+            return
+        for url in matches:
             self.q.put((url, self.parse_regex))
 
     # def parse_kuai(self, response):
@@ -156,7 +160,7 @@ class Collector:
     #     ips = parser.parse(self.q, self.parse_xici)
     #     self.storage(ips, response.url)
 
-    def collect(self, concurrent_num=10):
+    def collect(self, concurrent_num=3):
         while not self.q.empty():
             elements = cut_queue(self.q, concurrent_num)
             reqs = (request(ele[0], is_map=True) for ele in elements)

@@ -1,4 +1,4 @@
-import time
+
 from datetime import datetime
 from random import choice
 from multiprocessing import Process, JoinableQueue, Queue
@@ -30,20 +30,15 @@ class Validator:
         self.logger.info('my ip: %s', resp.json().get('origin'))
         return resp.json().get('origin')
 
-    def get_db_proxies(self):
-        for proxy in COLLECTION.find().limit(1000):
-            self.proxy_source_q.put(proxy.get('proxy'))
+    def clear_up_db_proxies(self):
+        # COLLECTION.delete_many({'alive_times': None, 'detect_times': {'$gt': 0}})
+        COLLECTION.delete_many({'type': ['normal']})
+        COLLECTION.delete_many({'alive_times': 0})
+        COLLECTION.delete_many({'score': {'$lt': 0.5}})
 
-    # def get_db_proxies(self):
-    #     for proxy in COLLECTION.find():
-    #         http = {'http': proxy.get('http')}
-    #         https = {'https': proxy.get('https')}
-    #         self.proxy_source_q.put(
-    #             request(choice(TESTSITES.get('http')), proxy=http, is_map=True)
-    #         )
-    #         self.proxy_source_q.put(
-    #             request(choice(TESTSITES.get('https')), proxy=https, is_map=True)
-    #         )
+    def get_db_proxies(self):
+        for proxy in COLLECTION.find():
+            self.proxy_source_q.put(proxy.get('proxy'))
 
     def get_proxies(self, proxies_seq):
         for proxy in proxies_seq:
@@ -57,6 +52,7 @@ class Validator:
             proxies = cut_queue(q, concurrent_num)
             self._web_validator(proxies)
         self.proxy_validated_q.join()
+        self.clear_up_db_proxies()
 
     def _web_validator(self, proxies):
         rs = (request(choice(WEBSITES), proxy=proxy, is_map=True)
@@ -166,7 +162,8 @@ class Validator:
             # if not proxy:
             #     time.sleep(60*2)
             self.logger.info('real time testing: %s', proxy)
-            resp = request(choice(WEBSITES), proxy=proxy, timeout=5)
+            # TODO: websites http https
+            resp = request('https://www.baidu.com/', proxy=proxy, timeout=5)
 
             if not resp:
                 self.logger.info('dead: %s', proxy)
@@ -178,7 +175,7 @@ class Validator:
                 {'proxy': proxy},
                 {
                     '$set': {'proxy': proxy, 'protocol': protocol},
-                    '$inc': {'alive_times'},
+                    '$inc': {'alive_times': 1},
                     '$push': {'alive_time_base': datetime.now()}
                 },
                 upsert=True

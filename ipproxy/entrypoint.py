@@ -28,7 +28,7 @@ class IPProxy:
         p1 = Process(target=collector.collect)
         p2 = Process(target=validator.website_validate, args=(Q,))
         p3 = Process(target=validator.test_validate)
-        p4 = Process(target=validator.real_time)
+        # p4 = Process(target=validator.real_time)
         # p1.daemon bad urls
         p1.daemon, p3.daemon = True, True
         p1.start()
@@ -36,8 +36,9 @@ class IPProxy:
         time.sleep(10)
         p2.start()
         p3.start()
-        p4.start()
+        # p4.start()
         p2.join()
+        # p4.join()
 
 
 # def run_ip_proxy():
