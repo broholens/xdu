@@ -3,8 +3,9 @@ from queue import Queue
 from random import choice
 from operator import itemgetter
 
-from pymongo import MongoClient, GEO2D
+from pymongo import MongoClient, GEOSPHERE
 from bson.objectid import ObjectId
+from bson.son import SON
 
 from ipproxy.utils import *
 from ipproxy.settings import UA
@@ -47,9 +48,9 @@ class Ziroom:
     # 通过模糊地址获取位置信息（location， formatted_address）
     location_url = 'http://restapi.amap.com/v3/geocode/geo?key={0}&address={1}&city={2}'
     # 通过location获取附近POI(数量)
-    prosperous_url = 'http://restapi.amap.com/v3/place/around?key={}&location={}&radius=2000'
+    prosperous_url = 'http://restapi.amap.com/v3/place/around?key={}&location={}&radius=1000&types=050000|060100|060400|070000'
     # 起点终点距离，公交耗时（可多个起点）
-    distance_url = 'http://restapi.amap.com/v3/distance?key={}&origins={}&destination={}&type=2'
+    distance_url = 'http://restapi.amap.com/v3/distance?key={}&origins={}&destination={}'
 
     concurrent_num = 10
 
@@ -59,11 +60,14 @@ class Ziroom:
         self.city = city  # 查询城市
         self.start_url = self.start_urls_dict.get(city)
         self.request_q = Queue()  # 存放能找到房间信息的链接
+        self.after_room_ids = set()
         self.db = MongoClient().ziroom
-        if 'location' not in self.db.ziroom.index_information():
-            self.db.ziroom.create_index([('location', GEO2D)])
+        if 'location_2dsphere' not in self.db.ziroom.index_information():
+            self.db.ziroom.create_index([('location', GEOSPHERE)])
 
     def get_index_urls(self):
+        # 库中的房间可能会过期，如果这次搜到的房间跟库中不同，则要把库中sell状态设为off
+        self.before_room_ids = [i['room_id'] for i in self.db.ziroom.find()]
 
         # 将某区某镇的房子的第一页链接放进request_q
         resp = request(self.start_url, header=self.headers)
@@ -125,12 +129,24 @@ class Ziroom:
                     continue
                 self.get_room_url(resp)
 
+        self.off_sell()
+
     def store_room(self, item):
+        self.after_room_ids.add(item['room_id'])
+        item['sell_status'] = 'on'
         self.db.ziroom.update_one(
             {'room_id': item['room_id']},
             {'$set': item},
             upsert=True
         )
+
+    def off_sell(self):
+        off_set = set(self.before_room_ids) - self.after_room_ids
+        for room_id in off_set:
+            self.db.ziroom.update_one(
+                {'room_id': room_id},
+                {'$set': {'sell_status': 'off'}}
+            )
 
     def add_location(self, city=None):
         # 调用api获取房间location
@@ -159,6 +175,7 @@ class Ziroom:
                 except:
                     not_exist_num += 1
                     logger.error('error, cannot find %s', not_exist_num)
+                    logger.error(requests[index].url)
                     continue
                 self.db.ziroom.update_one(
                     {'_id': requests[index].room_id},
@@ -167,12 +184,12 @@ class Ziroom:
                             'location': location,
                             'formatted_address': matched['formatted_address'],
                             'province': matched['province'],
+                            'city': matched['city'],
                             'district': matched['district'],
                             'street': matched['street']
                         },
                         '$unset': {'address': 1}
-                    },
-                    upsert=True
+                    }
                 )
 
     def search_rooms(self, destination, dis=0.3, dur=0.3, pro=0.4, distance=10):
@@ -192,10 +209,24 @@ class Ziroom:
         prosperous_q = Queue()  # 请求某地繁华程度
 
         dest = [float(i) for i in destination.split(',')]
-        for room in self.db.ziroom.find(
-            {'location': {'$within': {'$center': [dest, distance*1000]}}},
-        ):
-            location = ','.join([str(i) for i in room['location']])
+        rooms = self.db.ziroom.find(
+            {
+                'location': {
+                    '$near': {
+                        '$geometry': {
+                            'type': 'Point',
+                            'coordinates': dest
+                        },
+                        '$maxDistance': distance * 1000
+                    }
+                },
+                'sell_status': 'on'
+            },
+            {'location': 1}
+        )
+        print('find rooms: ', rooms.count())
+        for room in rooms:
+            location = ','.join([str(i) for i in room['location']['coordinates']])
             url = self.distance_url.format(
                 choice(self.keys), location, destination
             )
@@ -207,9 +238,13 @@ class Ziroom:
                 url = self.prosperous_url.format(choice(self.keys), location)
                 prosperous_q.put(request(url, is_map=True, attrs=attrs))
 
-        self.add_prosperous(prosperous_q)
-
+        t1 = time()
+        # self.add_prosperous(prosperous_q)
+        # t2 = time()
+        # print('add prosperous done', t2-t1)
         results = self.get_distance(distance_q)
+        t3 = time()
+        print('get distance done', t3-t1)
 
         # origins 最多支持100个
         # while not room_loc_q.empty():
@@ -249,19 +284,32 @@ class Ziroom:
         #             ])
 
         # 归一化
-        dis_mid, dis_asd = self.calculate_asd(results, key=itemgetter(1))
-        dur_mid, dur_asd = self.calculate_asd(results, key=itemgetter(2))
-        pro_mid, pro_asd = self.calculate_asd(results, key=itemgetter(3))
+        dis_mid, dis_asd = self.calc_mid_asd(results, key=1)
+        dur_mid, dur_asd = self.calc_mid_asd(results, key=2)
+        pro_mid, pro_asd = self.calc_mid_asd(results, key=3)
+        print(dis_mid, dis_asd)
+        print(dur_mid, dur_asd)
+        print(pro_mid, pro_asd)
 
         for result in results:
             dis_score = (result[1] - dis_mid) / dis_asd
             dur_score = (result[2] - dur_mid) / dur_asd
             pro_score = (result[3] - pro_mid) / pro_asd
-            result.append(dis_score)
-            result.append(dur_score)
-            result.append(pro_score)
-            result.append(dur_score*dur+dis_score*dis+pro_score*pro)
+            result.append(round(dis_score, 2))
+            result.append(round(dur_score, 2))
+            result.append(round(pro_score, 2))
+            result.append(round(dur_score*dur+dis_score*dis+pro_score*pro, 2))
+        # dis_ = self.normalization(results, 1)
+        # dur_ = self.normalization(results, 2)
+        # pro_ = self.normalization(results, 3)
+        #
+        # for index, result in enumerate(results):
+        #     result.append(dis_[index])
+        #     result.append(dur_[index])
+        #     result.append(pro_[index])
+        #     result.append(dis_[index]*dis+dur_[index]*dur+pro_[index]*pro)
 
+        print('calculate done', time()-t3)
         for result in sorted(results, key=itemgetter(-1), reverse=True):
             print(result)
 
@@ -270,6 +318,10 @@ class Ziroom:
             requests = cut_queue(prosperous_q, self.concurrent_num)
             resps = grequests.map(requests, gtimeout=self.gtimeout)
             for index, resp in enumerate(resps):
+                if not resp:
+                    logger.error('recycle %s', requests[index].url)
+                    prosperous_q.put(requests[index])
+                    continue
                 resp = resp.json()
                 if int(resp['infocode']) != 10000:
                     logger.error('error, update infocode: ', resp['infocode'])
@@ -278,16 +330,18 @@ class Ziroom:
 
                 self.db.ziroom.update_one(
                     {'_id': requests[index].room_id},
-                    {'$set': {'prosperous_level': int(resp['count'])}},
-                    upsert=True
+                    {'$set': {'prosperous_level': int(resp['count'])}}
                 )
 
     def get_distance(self, distance_q):
         results = []
         while not distance_q.empty():
-            requests = cut_queue(distance_q, 3)
+            requests = cut_queue(distance_q, self.concurrent_num)
             resps = grequests.map(requests, gtimeout=self.gtimeout)
             for index, resp in enumerate(resps):
+                if not resp:
+                    distance_q.put(requests[index])
+                    continue
                 resp = resp.json()
                 if int(resp['infocode']) != 10000:
                     logger.error('error, infocode: %s', resp['infocode'])
@@ -302,24 +356,41 @@ class Ziroom:
                     {'prosperous_level': 1, 'room_url': 1, '_id': 0}
                 )
                 results.append([
-                    room['room_url'], distance,
-                    duration, room['prosperous_level']
+                    room['room_url'], int(distance),
+                    int(duration), room['prosperous_level']
                 ])
         return results
 
-    def calculate_asd(self, seq, key=None):
-        # 计算绝对标准差
-        _sort = sorted(seq, key=key)
-        middle = _sort[len(_sort)//2]
-        return middle, sum([i-middle for i in _sort])/len(_sort)
+    # def normalization(self, seq, key):
+    #     seq = [i[key] for i in seq]
+    #     distance = max(seq) - min(seq)
+    #     result = []
+    #     for i in seq:
+    #         value = (i - min(seq)) / distance
+    #         if value == 0:
+    #             result.append(1)
+    #         elif value == 1:
+    #             result.append(0)
+    #         else:
+    #             result.append(round(1/distance, 2))
+    #     return result
+
+    def calc_mid_asd(self, seq, key):
+        # 计算中位数，绝对标准差
+        _sort = sorted(seq, key=itemgetter(key))
+        mid = _sort[len(_sort)//2+1][key]
+        if len(_sort) % 2 == 1:
+            middle = mid
+        else:
+            middle = (mid + _sort[len(_sort)//2][key]) / 2
+        return middle, sum([abs(i[key]-middle) for i in _sort])/len(_sort)
 
 
 if __name__ == '__main__':
-    start = time()
     ziroom = Ziroom()
     # ziroom.find_rooms()
     #
-    ziroom.add_location()
+    # ziroom.add_location()
 
     destination_url = 'http://restapi.amap.com/v3/geocode/geo?key=1f6d0d8ea68c21088beec7e0ca5e7b1e&address=方恒国际中心A座&city=北京'
     destination = request(destination_url).json()['geocodes'][0]['location']
