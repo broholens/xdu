@@ -58,39 +58,39 @@ class Collector:
         # )
 
         # for mayi
-        # now = day_delta() - 18
-        # urls.extend(
-        #     [(f'http://www.mayidaili.com/share/view/{i}/', self.parse_regex)
-        #      # for i in range(now, now - PAGES, -1)]
-        #      for i in range(now, 1, -1)]
-        # )
+        now = day_delta() - 18
+        urls.extend(
+            [(f'http://www.mayidaili.com/share/view/{i}/', self.parse_regex)
+             # for i in range(now, now - PAGES, -1)]
+             for i in range(now, now - 2, -1)]
+        )
 
         # for kuaidaili todo: 1001-1890
-        # urls.extend(
-        #     [(f'http://www.kuaidaili.com/free/inha/{i}', self.parse_regex)
-        #      for i in range(1, sum((1, 1000)))]  # +
-        #     # [(f'http://www.kuaidaili.com/free/intr/{i}', self.parse_kuai)
-        #     #  for i in range(1, sum((1, PAGES)))]
-        # )
+        urls.extend(
+            [(f'http://www.kuaidaili.com/free/inha/{i}', self.parse_regex)
+             for i in range(1, sum((1, 1)))]  # +
+            # [(f'http://www.kuaidaili.com/free/intr/{i}', self.parse_kuai)
+            #  for i in range(1, sum((1, PAGES)))]
+        )
 
-        # for zdaye+
-        # now = hour_delta() + ZDAYE_START_PAGE_ID
-        # urls.extend(
-        #     [(f'http://ip.zdaye.com/dayProxy/ip/{i}.html', self.parse_regex)
-        #      for i in range(now, now - 795, -1)]
-        # )
+        # for zdaye
+        now = hour_delta() + ZDAYE_START_PAGE_ID
+        urls.extend(
+            [(f'http://ip.zdaye.com/dayProxy/ip/{i}.html', self.parse_regex)
+             for i in range(now, now - 2, -1)]
+        )
 
-        # for ip181+
+        # for ip181
         # urls.extend(
         #     [(f'http://www.ip181.com/daili/{i}.html', self.parse_regex)
         #      for i in range(1, sum((1, 690)))]
         # )
         #
         # # for xici
-        # urls.extend(
-        #     [(f'http://www.xicidaili.com/nn/{i}', self.parse_regex)
-        #      for i in range(1, sum((1, 1000)))]
-        # )
+        urls.extend(
+            [(f'http://www.xicidaili.com/nn/{i}', self.parse_regex)
+             for i in range(1, sum((1, 2)))]
+        )
         #
         # # for mimi
         # urls.extend(
@@ -104,7 +104,7 @@ class Collector:
         now = day_delta(XS_START, XS_END) * 2 + 27
         urls.extend(
             [(f'http://www.xsdaili.com/dayProxy/ip/{i}.html', self.parse_regex)
-             for i in range(now, 1, -1)]  # not contains 1
+             for i in range(now, now - 2, -1)]  # not contains 1
         )
 
         # for goubanjia

@@ -20,9 +20,10 @@ urls = list()
 
 
 # for data5u
-urls.extend(
-    [f'http://www.data5u.com/dayip-{i}-10.html' for i in range(1, sum((1, 290)))]
-)
+# TODO:
+# urls.extend(
+#     [f'http://www.data5u.com/dayip-{i}-10.html' for i in range(1, sum((1, 290)))]
+# )
 
 # for ip3366
 # TODO: network firewall  (head/title -> network firewall)
@@ -76,17 +77,19 @@ class MyCollector(Collector):
                 if not resp or len(RE_HOST.findall(resp.text)) < 5:
                     self.logger.error('recycle: %s', url)
                     self.q.put(url)
-                    requests.post(api_detect_url, data=json.dumps(proxy))
+                    # requests.post(api_detect_url, data=json.dumps(proxy))
                     continue
                 self.logger.info('fetched: %s', url)
                 self.proxy_q.put(proxy)
-                requests.post(api_alive_url, data=json.dumps(proxy))
-                self.parse_data5u(resp)
+                # requests.post(api_alive_url, data=json.dumps(proxy))
+                self.parse_regex(resp)
+                # self.parse_data5u(resp)
 
 
 if __name__ == '__main__':
     my_collector = MyCollector(urls)
-    validator = Validator()
+    my_collector.collect()
+    # validator = Validator()
     # p1 = Process(target=my_collector.collect)
     # p2 = Process(target=validator.website_validate, args=())
     # p3 = Process(target=validator.test_validate)

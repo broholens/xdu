@@ -21,19 +21,28 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def request(url, proxy=None, timeout=TIMEOUT, is_map=False, retry=False):
+def request(url, proxy=None, header=None, timeout=TIMEOUT, is_map=False, attrs=None):
     """
     catch exception
     :return: response if ok else None
     """
-    header = {'User-Agent': random.choice(UA)}
+
+    header = header or {'User-Agent': random.choice(UA)}
     # try:
     req = grequests.get(url, proxies=proxy, headers=header, timeout=timeout)
-    logger.info('fetching %s %s', url, proxy)
+    # logger.info('fetching %s %s', url, proxy)
     if is_map is False:
         req.send()
-        return req.response
-    return req
+        resp = req.response
+    else:
+        resp = req
+
+    if resp and attrs:
+        for key, value in attrs.items():
+            setattr(resp, key, value)
+
+    return resp
+
     # except:
     #     logger.error('failed to request %s', url)
     #     if retry is False:

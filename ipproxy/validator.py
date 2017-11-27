@@ -33,7 +33,7 @@ class Validator:
     def clear_up_db_proxies(self):
         COLLECTION.delete_many({'type': ['normal']})
         COLLECTION.delete_many({'alive_times': None})
-        COLLECTION.delete_many({'score': {'$lt': 0.5}})
+        COLLECTION.delete_many({'score': {'$lt': 0.3}})
 
     def get_db_proxies(self):
         for proxy in COLLECTION.find():
